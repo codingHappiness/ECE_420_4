@@ -54,7 +54,6 @@ int main (int argc, char* argv[]){
 	//start timing
 	do{
 		++iterationcount;
-		//if (my_rank == 0)
 		vec_cp(r, r_pre, nodecount);
 		//Operate on subsection of r based on rank
 		for ( i = my_rank*nodecount/numprocs; i < my_rank*nodecount/numprocs + nodecount/numprocs; ++i){
@@ -68,7 +67,7 @@ int main (int argc, char* argv[]){
 		}
 	}while(rel_error(r, r_pre, nodecount) >= EPSILON);
 
-	printf("Loop is done!%d", my_rank);
+	printf("Loop is done!%d\n", my_rank);
 
 	// post processing
 	node_destroy(nodehead, nodecount);
