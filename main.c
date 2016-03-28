@@ -5,6 +5,7 @@
 #include <math.h>
 #include <mpi.h>
 #include "Lab4_IO.h"
+#include "timer.h"
 
 #define EPSILON 0.00001
 #define DAMPING_FACTOR 0.85
@@ -16,6 +17,7 @@ int main (int argc, char* argv[]){
 	int nodecount;
 	int *num_in_links, *num_out_links;
 	double *r, *r_pre, *r_local;
+	double start, end;
 	int i, j;
 	double damp_const, relative_error;
 	int collected_nodecount;
@@ -49,7 +51,8 @@ int main (int argc, char* argv[]){
 		r[i] = 1.0 / nodecount;
 	damp_const = (1.0 - DAMPING_FACTOR) / nodecount;
 	// CORE CALCULATION
-	//start timing
+	if (my_rank == 0)
+		GET_TIME(start);
 	do{
 		vec_cp(r, r_pre, nodecount);
 		//Operate on subsection of r based on rank
@@ -63,15 +66,13 @@ int main (int argc, char* argv[]){
 		MPI_Allgather(MPI_IN_PLACE, nodecount/numprocs, MPI_DOUBLE, r, nodecount/numprocs, MPI_DOUBLE, MPI_COMM_WORLD);
 	}while(rel_error(r, r_pre, nodecount) >= EPSILON);
 
-	printf("Loop is done!%d\n", my_rank);
 
-	// post processing
-	node_destroy(nodehead, nodecount);
-	//free(num_in_links); free(num_out_links);
 	
-	if (my_rank == 0)
-		Lab4_saveoutput(r, nodecount, 0.0);
-
+	if (my_rank == 0){
+		GET_TIME(end);
+		Lab4_saveoutput(r, nodecount, end - start);
+	}
+	node_destroy(nodehead, nodecount);
 	free(r); 
 	free(r_pre); 
 	MPI_Finalize();
