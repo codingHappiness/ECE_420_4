@@ -18,7 +18,6 @@ int main (int argc, char* argv[]){
 	double *r, *r_pre, *r_local;
 	int i, j;
 	double damp_const, relative_error;
-	int iterationcount = 0;
 	int collected_nodecount;
 	double cst_addapted_threshold;
 	FILE *fp;
@@ -45,7 +44,6 @@ int main (int argc, char* argv[]){
 	
 	r = malloc(nodecount * sizeof(double));
 	r_pre = malloc(nodecount * sizeof(double));
-	r_local = malloc(nodecount * sizeof(double));
 	
 	for ( i = 0; i < nodecount; ++i)
 		r[i] = 1.0 / nodecount;
@@ -53,18 +51,16 @@ int main (int argc, char* argv[]){
 	// CORE CALCULATION
 	//start timing
 	do{
-		++iterationcount;
 		vec_cp(r, r_pre, nodecount);
 		//Operate on subsection of r based on rank
-		for ( i = my_rank*nodecount/numprocs; i < my_rank*nodecount/numprocs + nodecount/numprocs; ++i){
-			r_local[i] = 0;
+		for ( i = my_rank*nodecount/numprocs; i < (my_rank+1)*nodecount/numprocs; ++i){
+			r[i] = 0;
 			for(j = 0; j < nodehead[i].num_in_links; j++)
-				r_local[i] += r[nodehead[i].inlinks[j]]/num_out_links[nodehead[i].inlinks[j]];
-			r_local[i] *= DAMPING_FACTOR;
-			r_local[i] += damp_const;
-			MPI_Allgather(r_local, nodecount/numprocs, MPI_DOUBLE, r, nodecount/numprocs, MPI_DOUBLE, MPI_COMM_WORLD);
-			MPI_Barrier(MPI_COMM_WORLD);//acts as barrier for next iteration
+				r[i] += r_pre[nodehead[i].inlinks[j]]/num_out_links[nodehead[i].inlinks[j]];
+			r[i] *= DAMPING_FACTOR;
+			r[i] += damp_const;
 		}
+		MPI_Allgather(MPI_IN_PLACE, nodecount/numprocs, MPI_DOUBLE, r, nodecount/numprocs, MPI_DOUBLE, MPI_COMM_WORLD);
 	}while(rel_error(r, r_pre, nodecount) >= EPSILON);
 
 	printf("Loop is done!%d\n", my_rank);
@@ -78,7 +74,6 @@ int main (int argc, char* argv[]){
 
 	free(r); 
 	free(r_pre); 
-	free(r_local);
 	MPI_Finalize();
 	return 0;
 }
