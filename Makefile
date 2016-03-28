@@ -1,5 +1,5 @@
 all: main.c Lab4_IO.c
-	gcc -o main main.c Lab4_IO.c -lm
+	mpicc -o main main.c Lab4_IO.c -lm
 
 serial:
 	gcc -o serialtester serialtester.c Lab4_IO.c -lm

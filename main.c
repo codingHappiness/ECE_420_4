@@ -3,32 +3,33 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <mpi.h>
 #include "Lab4_IO.h"
 
 #define EPSILON 0.00001
 #define DAMPING_FACTOR 0.85
 
 #define THRESHOLD 0.0001
-#define TAG 0
 
 int main (int argc, char* argv[]){
 	struct node *nodehead;
 	int nodecount;
 	int *num_in_links, *num_out_links;
-	double *r, *r_pre, *r_recv;
-	int i, j, k;
-	double damp_const;
+	double *r, *r_pre, *r_local;
+	int i, j;
+	double damp_const, relative_error;
 	int iterationcount = 0;
 	int collected_nodecount;
 	double cst_addapted_threshold;
 	FILE *fp;
-
+	int my_rank;
 	int numprocs;
-	int myid;
-	MPI_Status stat;
-
+	
+	MPI_Init(NULL,NULL);
+	MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+	MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
 	// Load the data and simple verification
-	if ((fp = fopen("data_output", "r")) == NULL ) {
+	if ((fp = fopen("data_output", "r")) == NULL ){
 		printf("Error loading the data_output.\n");
 		return 253;
 	}
@@ -44,49 +45,40 @@ int main (int argc, char* argv[]){
 	
 	r = malloc(nodecount * sizeof(double));
 	r_pre = malloc(nodecount * sizeof(double));
+	r_local = malloc(nodecount * sizeof(double));
+	
 	for ( i = 0; i < nodecount; ++i)
 		r[i] = 1.0 / nodecount;
 	damp_const = (1.0 - DAMPING_FACTOR) / nodecount;
 	// CORE CALCULATION
+	//start timing
 	do{
 		++iterationcount;
-		vec_cp(r, r_pre, nodecount);
-		for ( i = 0; i < nodecount; ++i){
-			r[i] = 0;
-
-			MPI_Init(NULL, NULL);
-			MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
-			MPI_Comm_rank(MPI_COMM_WORLD, &myid);
-
-			if(myid == 0) {
-				printf("%d: We have %d processors\n", myid, numprocs);
-				MPI_Bcast(r, nodecount, MPI_DOUBLE, k, TAG, MPI_COMM_WORLD);
-
-				for(k=1;k<numprocs;k++) {
-					MPI_Recv(r_recv, nodecount, MPI_DOUBLE, k, TAG, MPI_COMM_WORLD, &stat);
-				}
-			}
-			else {
-				MPI_Recv(r, nodecount, MPI_DOUBLE, 0, TAG, MPI_COMM_WORLD, &stat);
-				
-				for ( j = 0; j < nodehead[i].num_in_links; ++j)
-					r[i] += r_pre[nodehead[i].inlinks[j]] / num_out_links[nodehead[i].inlinks[j]];
-				r[i] *= DAMPING_FACTOR;
-				r[i] += damp_const;
-				
-				MPI_Send(r, nodecount, MPI_DOUBLE, 0, TAG, MPI_COMM_WORLD);
-			}
-
-			MPI_Finalize();
+		if (my_rank == 0)
+			vec_cp(r, r_pre, nodecount);
+		//Operate on subsection of r based on rank
+		for ( i = my_rank*nodecount/numprocs; i < my_rank*nodecount/numprocs + nodecount/numprocs; ++i){
+			for(j = 0; j < nodehead[i].num_in_links; j++)
+				r_local[i] += r[nodehead[i].inlinks[j]]/num_out_links[nodehead[i].inlinks[i]];
+			r_local[i] *= DAMPING_FACTOR;
+			r_local[i] += damp_const;
+//				r_local[i - my_rank*nodecount/numprocs] += r[nodehead[i].inlinks[j]]/num_out_links[nodehead[i].inlinks[i]];
+//			r_local[i - my_rank*nodecount/numprocs] *= DAMPING_FACTOR;
+//			r_local[i - my_rank*nodecount/numprocs] += damp_const;
+			MPI_Allgather(r_local, nodecount/numprocs, MPI_DOUBLE, r, nodecount/numprocs, MPI_DOUBLE, MPI_COMM_WORLD);
+			if (my_rank == 0)
+				relative_error = rel_error(r, r_pre, nodecount);
+			MPI_Bcast(&relative_error, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);//acts as barrier for next iteration
 		}
-
-	} while(rel_error(r, r_pre, nodecount) >= EPSILON);
+	}while(rel_error(r, r_pre, nodecount) >= EPSILON);
 
 	// post processing
 	node_destroy(nodehead, nodecount);
 	//free(num_in_links); free(num_out_links);
 	
-	Lab4_saveoutput(r, nodecount, 0.0);
+	if (my_rank == 0)
+		Lab4_saveoutput(r, nodecount, 0.0);
 
-	free(r); free(r_pre);
+	free(r); free(r_pre); free(r_local);
+	MPI_Finalize();
 }
